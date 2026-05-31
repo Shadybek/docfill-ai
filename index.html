@@ -1308,7 +1308,7 @@ input[type="text"], input[type="password"] {
         <span class="topbar-title" id="topbarTitle">Заполнить документ</span>
         <span class="topbar-subtitle" id="topbarSubtitle">— вставьте шаблон и документ клиента</span>
       </div>
-      <div style="font-size:11px;color:#6a90b8;">Powered by DeepSeek</div>
+      <div style="font-size:11px;color:#6a90b8;">Powered by Groq</div>
     </div>
 
     <div class="content-area">
@@ -1614,24 +1614,28 @@ input[type="text"], input[type="password"] {
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label" for="apiKeyInput">DeepSeek API ключ</label>
-        <input type="password" id="apiKeyInput" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+        <label class="form-label" for="apiKeyInput">Groq API ключ</label>
+        <input type="password" id="apiKeyInput" placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
       </div>
       <div class="form-group" style="margin-top:14px;">
         <label class="form-label" for="modelSelect">Модель Gemini</label>
         <select id="modelSelect" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--border);border-radius:4px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;background:var(--white);color:var(--text-primary);outline:none;">
-          <option value="deepseek-chat">deepseek-chat — DeepSeek V3 (рекомендуется)</option>
-          <option value="deepseek-reasoner">deepseek-reasoner — DeepSeek R1 (медленнее, умнее)</option>
+          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (рекомендуется)</option>
+          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (самый быстрый)</option>
+          <option value="llama3-70b-8192">llama3-70b-8192</option>
+          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+          <option value="gemma2-9b-it">gemma2-9b-it</option>
         </select>
       </div>
       <div class="settings-info">
-        <strong>Получить API ключ DeepSeek:</strong><br>
-        <a href="https://platform.deepseek.com/api_keys" target="_blank" class="settings-link">→ platform.deepseek.com/api_keys</a>
+        <strong>Получить бесплатный API ключ Groq:</strong><br>
+        <a href="https://console.groq.com/keys" target="_blank" class="settings-link">→ console.groq.com/keys</a>
         <br><br>
-        💰 Стоимость: ~$0.27 за 1М токенов (входящих). Документ ~4000 слов ≈ $0.002.
-        Пополнение от $5. Нет ежедневных лимитов как у Gemini Free.
+        ✅ Полностью бесплатно. Карта не нужна.<br>
+        Лимиты: 14 400 запросов/день, 6 000 токенов/мин.<br>
+        Для заполнения документов этого более чем достаточно.
         <br><br>
-        🔒 Ключ хранится только в вашем браузере и никуда не отправляется — только напрямую в DeepSeek API.
+        🔒 Ключ хранится только в вашем браузере и никуда не отправляется.
       </div>
     </div>
     <div class="modal-footer">
@@ -1986,7 +1990,7 @@ function updateApiStatus() {
 function openSettings() {
   document.getElementById('apiKeyInput').value = getApiKey();
   const sel = document.getElementById('modelSelect');
-  if (sel) sel.value = localStorage.getItem('docfill_model') || 'deepseek-chat';
+  if (sel) sel.value = localStorage.getItem('docfill_model') || 'llama-3.3-70b-versatile';
   document.getElementById('settingsModal').classList.add('visible');
 }
 
@@ -2006,15 +2010,14 @@ function saveApiKey() {
 }
 
 // ═══════════════════════════════════════════════════
-//  DEEPSEEK API CALL
+//  GROQ API CALL
 // ═══════════════════════════════════════════════════
 async function callGemini(prompt) {
-  // Функция сохраняет имя callGemini для совместимости с остальным кодом
   const key = getApiKey();
   if (!key) throw new Error('NO_API_KEY');
 
-  const model = localStorage.getItem('docfill_model') || 'deepseek-chat';
-  const url = 'https://api.deepseek.com/v1/chat/completions';
+  const model = localStorage.getItem('docfill_model') || 'llama-3.3-70b-versatile';
+  const url = 'https://api.groq.com/openai/v1/chat/completions';
 
   const body = {
     model: model,
@@ -2039,34 +2042,31 @@ async function callGemini(prompt) {
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    const msg = err?.error?.message || err?.message || '';
+    const msg = err?.error?.message || '';
     const code = resp.status;
-    if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ DeepSeek. ' + msg);
-    if (code === 402) throw new Error('BILLING: Недостаточно средств на балансе DeepSeek. Пополните на platform.deepseek.com');
-    if (code === 429) throw new Error('RATE_LIMIT: Превышен лимит запросов. Подождите немного. ' + msg);
-    if (code === 503) throw new Error('API_ERROR: Серверы DeepSeek перегружены, попробуйте позже.');
+    if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ Groq.');
+    if (code === 429) throw new Error('RATE_LIMIT: ' + (msg || 'Превышен лимит. Подождите немного.'));
+    if (code === 503 || code === 502) throw new Error('API_ERROR: Серверы Groq перегружены, попробуйте позже.');
     throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
   const data = await resp.json();
   const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Пустой ответ от DeepSeek');
+  if (!text) throw new Error('Пустой ответ от Groq');
   return text;
 }
 
 function handleApiError(e) {
   const msg = e.message || '';
   if (msg === 'NO_API_KEY') {
-    toast('Не задан API ключ DeepSeek. Откройте настройки.', 'error');
+    toast('Не задан API ключ Groq. Откройте настройки.', 'error');
     openSettings();
-  } else if (msg.startsWith('BILLING')) {
-    toast('Недостаточно средств на балансе DeepSeek. Пополните на platform.deepseek.com', 'warning');
   } else if (msg.startsWith('RATE_LIMIT')) {
-    toast('Превышен лимит запросов. Подождите немного и попробуйте снова.', 'warning');
+    toast('Превышен лимит Groq. Подождите немного и попробуйте снова.', 'warning');
   } else if (msg === 'NETWORK_ERROR') {
     toast('Нет подключения к интернету', 'error');
   } else if (msg.startsWith('FORBIDDEN')) {
-    toast('Неверный API ключ DeepSeek. Проверьте ключ в настройках.', 'error');
+    toast('Неверный API ключ Groq. Проверьте ключ в настройках.', 'error');
     openSettings();
   } else if (msg.startsWith('BAD_REQUEST')) {
     toast('Ошибка запроса: ' + msg.replace('BAD_REQUEST: ', ''), 'error');
