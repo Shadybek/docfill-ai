@@ -1617,11 +1617,23 @@ input[type="text"], input[type="password"] {
         <label class="form-label" for="apiKeyInput">Gemini API ключ</label>
         <input type="password" id="apiKeyInput" placeholder="Вставьте ваш API ключ из Google AI Studio">
       </div>
+      <div class="form-group" style="margin-top:14px;">
+        <label class="form-label" for="modelSelect">Модель Gemini</label>
+        <select id="modelSelect" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--border);border-radius:4px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;background:var(--white);color:var(--text-primary);outline:none;">
+          <option value="gemini-2.0-flash">gemini-2.0-flash (рекомендуется)</option>
+          <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+          <option value="gemini-1.5-flash-latest">gemini-1.5-flash-latest</option>
+          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+        </select>
+      </div>
       <div class="settings-info">
         <strong>Получить бесплатный ключ:</strong><br>
         <a href="https://aistudio.google.com/app/apikey" target="_blank" class="settings-link">→ aistudio.google.com/app/apikey</a>
         <br><br>
         🔒 Ключ хранится только в вашем браузере (localStorage) и никуда не отправляется — только напрямую в Google API при каждом запросе.
+        <br><br>
+        ⚠️ Если видите ошибку «модель не найдена» — смените модель выше.
       </div>
     </div>
     <div class="modal-footer">
@@ -1975,6 +1987,8 @@ function updateApiStatus() {
 
 function openSettings() {
   document.getElementById('apiKeyInput').value = getApiKey();
+  const sel = document.getElementById('modelSelect');
+  if (sel) sel.value = localStorage.getItem('docfill_model') || 'gemini-2.0-flash';
   document.getElementById('settingsModal').classList.add('visible');
 }
 
@@ -1986,9 +2000,11 @@ function saveApiKey() {
   const val = document.getElementById('apiKeyInput').value.trim();
   if (!val) { toast('Введите API ключ', 'error'); return; }
   saveApiKey_store(val);
+  const sel = document.getElementById('modelSelect');
+  if (sel) localStorage.setItem('docfill_model', sel.value);
   updateApiStatus();
   closeSettings();
-  toast('API ключ сохранён', 'success');
+  toast('Настройки сохранены (модель: ' + (localStorage.getItem('docfill_model') || 'gemini-2.0-flash') + ')', 'success');
 }
 
 // ═══════════════════════════════════════════════════
@@ -2000,7 +2016,8 @@ async function callGemini(prompt) {
     throw new Error('NO_API_KEY');
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+  const model = localStorage.getItem('docfill_model') || 'gemini-2.0-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -2021,15 +2038,15 @@ async function callGemini(prompt) {
     throw new Error('NETWORK_ERROR');
   }
 
-  if (resp.status === 429) throw new Error('RATE_LIMIT');
-  if (resp.status === 400) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error('BAD_REQUEST: ' + (err?.error?.message || 'Bad Request'));
-  }
-  if (resp.status === 403) throw new Error('FORBIDDEN: Неверный API ключ или нет доступа');
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error('API_ERROR: ' + (err?.error?.message || resp.status));
+    const msg = err?.error?.message || '';
+    const code = err?.error?.code || resp.status;
+    if (resp.status === 429) throw new Error('RATE_LIMIT: ' + (msg || 'Quota exceeded'));
+    if (resp.status === 400) throw new Error('BAD_REQUEST: ' + (msg || 'Bad Request'));
+    if (resp.status === 403) throw new Error('FORBIDDEN: ' + (msg || 'Неверный API ключ или нет доступа'));
+    if (resp.status === 404) throw new Error('NOT_FOUND: Модель не найдена. ' + msg);
+    throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
   const data = await resp.json();
@@ -2039,15 +2056,23 @@ async function callGemini(prompt) {
 }
 
 function handleApiError(e) {
-  if (e.message === 'NO_API_KEY') {
+  const msg = e.message || '';
+  if (msg === 'NO_API_KEY') {
     toast('Не задан API ключ. Откройте настройки.', 'error');
     openSettings();
-  } else if (e.message === 'RATE_LIMIT') {
-    toast('Превышен лимит запросов — подождите минуту и попробуйте снова', 'warning');
-  } else if (e.message === 'NETWORK_ERROR') {
+  } else if (msg.startsWith('RATE_LIMIT')) {
+    const detail = msg.replace('RATE_LIMIT: ', '');
+    toast('Лимит запросов: ' + detail, 'warning');
+  } else if (msg === 'NETWORK_ERROR') {
     toast('Нет подключения к интернету', 'error');
+  } else if (msg.startsWith('NOT_FOUND')) {
+    toast(msg.replace('NOT_FOUND: ', ''), 'error');
+  } else if (msg.startsWith('FORBIDDEN')) {
+    toast('Доступ запрещён: ' + msg.replace('FORBIDDEN: ', ''), 'error');
+  } else if (msg.startsWith('BAD_REQUEST')) {
+    toast('Ошибка запроса: ' + msg.replace('BAD_REQUEST: ', ''), 'error');
   } else {
-    toast('Ошибка: ' + e.message, 'error');
+    toast('Ошибка: ' + msg, 'error');
   }
 }
 
