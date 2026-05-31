@@ -1308,7 +1308,7 @@ input[type="text"], input[type="password"] {
         <span class="topbar-title" id="topbarTitle">Заполнить документ</span>
         <span class="topbar-subtitle" id="topbarSubtitle">— вставьте шаблон и документ клиента</span>
       </div>
-      <div style="font-size:11px;color:#6a90b8;">Powered by Groq</div>
+      <div style="font-size:11px;color:#6a90b8;">Powered by OpenRouter</div>
     </div>
 
     <div class="content-area">
@@ -1614,26 +1614,27 @@ input[type="text"], input[type="password"] {
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label" for="apiKeyInput">Groq API ключ</label>
-        <input type="password" id="apiKeyInput" placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+        <label class="form-label" for="apiKeyInput">OpenRouter API ключ</label>
+        <input type="password" id="apiKeyInput" placeholder="sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
       </div>
       <div class="form-group" style="margin-top:14px;">
         <label class="form-label" for="modelSelect">Модель Gemini</label>
         <select id="modelSelect" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--border);border-radius:4px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;background:var(--white);color:var(--text-primary);outline:none;">
-          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant — 20 000 TPM ✅ рекомендуется</option>
-          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile — 6 000 TPM (умнее, но лимит)</option>
-          <option value="llama3-70b-8192">llama3-70b-8192 — 6 000 TPM</option>
-          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 — 5 000 TPM</option>
-          <option value="gemma2-9b-it">gemma2-9b-it — 15 000 TPM</option>
+          <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B ✅ бесплатно (рекомендуется)</option>
+          <option value="meta-llama/llama-3.1-8b-instruct:free">Llama 3.1 8B ✅ бесплатно (быстрее)</option>
+          <option value="mistralai/mistral-7b-instruct:free">Mistral 7B ✅ бесплатно</option>
+          <option value="google/gemma-2-9b-it:free">Gemma 2 9B ✅ бесплатно</option>
+          <option value="deepseek/deepseek-chat:free">DeepSeek V3 ✅ бесплатно</option>
+          <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B (платно, без лимитов)</option>
         </select>
       </div>
       <div class="settings-info">
-        <strong>Получить бесплатный API ключ Groq:</strong><br>
-        <a href="https://console.groq.com/keys" target="_blank" class="settings-link">→ console.groq.com/keys</a>
+        <strong>Получить бесплатный API ключ OpenRouter:</strong><br>
+        <a href="https://openrouter.ai/keys" target="_blank" class="settings-link">→ openrouter.ai/keys</a>
         <br><br>
-        ✅ Полностью бесплатно. Карта не нужна.<br>
-        Лимиты: 14 400 запросов/день, 6 000 токенов/мин.<br>
-        Для заполнения документов этого более чем достаточно.
+        ✅ Регистрация через Google. Карта не нужна.<br>
+        ✅ Бесплатные модели без лимита токенов в минуту.<br>
+        ✅ Большие документы — без проблем.
         <br><br>
         🔒 Ключ хранится только в вашем браузере и никуда не отправляется.
       </div>
@@ -1990,7 +1991,7 @@ function updateApiStatus() {
 function openSettings() {
   document.getElementById('apiKeyInput').value = getApiKey();
   const sel = document.getElementById('modelSelect');
-  if (sel) sel.value = localStorage.getItem('docfill_model') || 'llama-3.1-8b-instant';
+  if (sel) sel.value = localStorage.getItem('docfill_model') || 'meta-llama/llama-3.3-70b-instruct:free';
   document.getElementById('settingsModal').classList.add('visible');
 }
 
@@ -2006,24 +2007,24 @@ function saveApiKey() {
   if (sel) localStorage.setItem('docfill_model', sel.value);
   updateApiStatus();
   closeSettings();
-  toast('Настройки сохранены (модель: ' + (localStorage.getItem('docfill_model') || 'gemini-2.0-flash') + ')', 'success');
+  toast('Настройки сохранены', 'success');
 }
 
 // ═══════════════════════════════════════════════════
-//  GROQ API CALL
+//  OPENROUTER API CALL
 // ═══════════════════════════════════════════════════
 async function callGemini(prompt) {
   const key = getApiKey();
   if (!key) throw new Error('NO_API_KEY');
 
-  const model = localStorage.getItem('docfill_model') || 'llama-3.1-8b-instant';
-  const url = 'https://api.groq.com/openai/v1/chat/completions';
+  const model = localStorage.getItem('docfill_model') || 'meta-llama/llama-3.3-70b-instruct:free';
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
 
   const body = {
     model: model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
-    max_tokens: 8192
+    max_tokens: 4096
   };
 
   let resp;
@@ -2032,7 +2033,9 @@ async function callGemini(prompt) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + key
+        'Authorization': 'Bearer ' + key,
+        'HTTP-Referer': 'https://shadybek.github.io/docfill-ai/',
+        'X-Title': 'DocFill AI'
       },
       body: JSON.stringify(body)
     });
@@ -2044,29 +2047,32 @@ async function callGemini(prompt) {
     const err = await resp.json().catch(() => ({}));
     const msg = err?.error?.message || '';
     const code = resp.status;
-    if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ Groq.');
-    if (code === 429) throw new Error('RATE_LIMIT: ' + (msg || 'Превышен лимит. Подождите немного.'));
-    if (code === 503 || code === 502) throw new Error('API_ERROR: Серверы Groq перегружены, попробуйте позже.');
+    if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ OpenRouter.');
+    if (code === 402) throw new Error('BILLING: Недостаточно кредитов. Пополните на openrouter.ai/credits');
+    if (code === 429) throw new Error('RATE_LIMIT: ' + (msg || 'Превышен лимит.'));
+    if (code === 503 || code === 502) throw new Error('API_ERROR: Серверы перегружены, попробуйте позже.');
     throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
   const data = await resp.json();
   const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Пустой ответ от Groq');
+  if (!text) throw new Error('Пустой ответ от OpenRouter');
   return text;
 }
 
 function handleApiError(e) {
   const msg = e.message || '';
   if (msg === 'NO_API_KEY') {
-    toast('Не задан API ключ Groq. Откройте настройки.', 'error');
+    toast('Не задан API ключ OpenRouter. Откройте настройки.', 'error');
     openSettings();
   } else if (msg.startsWith('RATE_LIMIT')) {
-    toast('Превышен лимит Groq. Подождите немного и попробуйте снова.', 'warning');
+    toast('Превышен лимит. Подождите немного и попробуйте снова.', 'warning');
+  } else if (msg.startsWith('BILLING')) {
+    toast('Недостаточно кредитов OpenRouter. Проверьте баланс на openrouter.ai/credits', 'warning');
   } else if (msg === 'NETWORK_ERROR') {
     toast('Нет подключения к интернету', 'error');
   } else if (msg.startsWith('FORBIDDEN')) {
-    toast('Неверный API ключ Groq. Проверьте ключ в настройках.', 'error');
+    toast('Неверный API ключ OpenRouter. Проверьте ключ в настройках.', 'error');
     openSettings();
   } else if (msg.startsWith('BAD_REQUEST')) {
     toast('Ошибка запроса: ' + msg.replace('BAD_REQUEST: ', ''), 'error');
@@ -2104,9 +2110,9 @@ async function fillDocumentText() {
   }
   document.getElementById('clientDoc').classList.remove('error-field');
 
-  // Жёсткий лимит: каждая часть не более 2500 символов (~625 токенов)
-  const tplTrimmed = templateText.length > 2500 ? templateText.slice(0, 2500) + '\n...[обрезано]' : templateText;
-  const cliTrimmed = clientDoc.length > 2500 ? clientDoc.slice(0, 2500) + '\n...[обрезано]' : clientDoc;
+  // OpenRouter без TPM лимита — передаём полный текст
+  const tplTrimmed = templateText;
+  const cliTrimmed = clientDoc;
 
   let prompt;
   if (selectedTemplateId) {
@@ -2208,13 +2214,8 @@ async function fillDocumentDocx() {
     extraInstructions = tpl?.instructions || '';
   }
 
-  // Groq лимит 6000 TPM (~24 000 символов). Бюджет: поля + клиент ≤ 5000 токенов
-  const CLIENT_HARD_LIMIT = Math.max(1500, 5000 - fieldList.length);
-  const wasTrimmed = clientDoc.length > CLIENT_HARD_LIMIT;
-  const clientDocTrimmed = wasTrimmed
-    ? clientDoc.slice(0, CLIENT_HARD_LIMIT) + '\n...[обрезано]'
-    : clientDoc;
-  if (wasTrimmed) toast('Документ клиента обрезан до ' + CLIENT_HARD_LIMIT + ' символов из-за лимита API', 'warning');
+  // OpenRouter не имеет TPM лимита — передаём полный документ
+  const clientDocTrimmed = clientDoc;
 
   const prompt = `Заполни поля договора данными из документа клиента.
 ${extraInstructions ? 'ИНСТРУКЦИИ: ' + extraInstructions + '\n' : ''}
