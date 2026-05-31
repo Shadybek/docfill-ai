@@ -1308,7 +1308,7 @@ input[type="text"], input[type="password"] {
         <span class="topbar-title" id="topbarTitle">Заполнить документ</span>
         <span class="topbar-subtitle" id="topbarSubtitle">— вставьте шаблон и документ клиента</span>
       </div>
-      <div style="font-size:11px;color:#6a90b8;">Powered by Google Gemini</div>
+      <div style="font-size:11px;color:#6a90b8;">Powered by DeepSeek</div>
     </div>
 
     <div class="content-area">
@@ -1614,26 +1614,24 @@ input[type="text"], input[type="password"] {
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label" for="apiKeyInput">Gemini API ключ</label>
-        <input type="password" id="apiKeyInput" placeholder="Вставьте ваш API ключ из Google AI Studio">
+        <label class="form-label" for="apiKeyInput">DeepSeek API ключ</label>
+        <input type="password" id="apiKeyInput" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
       </div>
       <div class="form-group" style="margin-top:14px;">
         <label class="form-label" for="modelSelect">Модель Gemini</label>
         <select id="modelSelect" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--border);border-radius:4px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;background:var(--white);color:var(--text-primary);outline:none;">
-          <option value="gemini-2.0-flash">gemini-2.0-flash (рекомендуется)</option>
-          <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
-          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-          <option value="gemini-1.5-flash-latest">gemini-1.5-flash-latest</option>
-          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+          <option value="deepseek-chat">deepseek-chat — DeepSeek V3 (рекомендуется)</option>
+          <option value="deepseek-reasoner">deepseek-reasoner — DeepSeek R1 (медленнее, умнее)</option>
         </select>
       </div>
       <div class="settings-info">
-        <strong>Получить бесплатный ключ:</strong><br>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="settings-link">→ aistudio.google.com/app/apikey</a>
+        <strong>Получить API ключ DeepSeek:</strong><br>
+        <a href="https://platform.deepseek.com/api_keys" target="_blank" class="settings-link">→ platform.deepseek.com/api_keys</a>
         <br><br>
-        🔒 Ключ хранится только в вашем браузере (localStorage) и никуда не отправляется — только напрямую в Google API при каждом запросе.
+        💰 Стоимость: ~$0.27 за 1М токенов (входящих). Документ ~4000 слов ≈ $0.002.
+        Пополнение от $5. Нет ежедневных лимитов как у Gemini Free.
         <br><br>
-        ⚠️ Если видите ошибку «модель не найдена» — смените модель выше.
+        🔒 Ключ хранится только в вашем браузере и никуда не отправляется — только напрямую в DeepSeek API.
       </div>
     </div>
     <div class="modal-footer">
@@ -1988,7 +1986,7 @@ function updateApiStatus() {
 function openSettings() {
   document.getElementById('apiKeyInput').value = getApiKey();
   const sel = document.getElementById('modelSelect');
-  if (sel) sel.value = localStorage.getItem('docfill_model') || 'gemini-2.0-flash';
+  if (sel) sel.value = localStorage.getItem('docfill_model') || 'deepseek-chat';
   document.getElementById('settingsModal').classList.add('visible');
 }
 
@@ -2008,106 +2006,68 @@ function saveApiKey() {
 }
 
 // ═══════════════════════════════════════════════════
-//  GEMINI API CALL  (с авто-retry при 429)
+//  DEEPSEEK API CALL
 // ═══════════════════════════════════════════════════
 async function callGemini(prompt) {
+  // Функция сохраняет имя callGemini для совместимости с остальным кодом
   const key = getApiKey();
   if (!key) throw new Error('NO_API_KEY');
-  return await callGeminiWithRetry(prompt, key, 0);
-}
 
-async function callGeminiWithRetry(prompt, key, attempt) {
-  const model = localStorage.getItem('docfill_model') || 'gemini-2.0-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  const model = localStorage.getItem('docfill_model') || 'deepseek-chat';
+  const url = 'https://api.deepseek.com/v1/chat/completions';
 
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+    model: model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_tokens: 8192
   };
 
   let resp;
   try {
     resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
       body: JSON.stringify(body)
     });
   } catch (e) {
     throw new Error('NETWORK_ERROR');
   }
 
-  if (resp.status === 429) {
-    const err = await resp.json().catch(() => ({}));
-    const msg = err?.error?.message || '';
-
-    // Парсим сколько секунд ждать из сообщения Google ("retry in X seconds")
-    const retryMatch = msg.match(/retry.*?(\d+(?:\.\d+)?)\s*s/i);
-    let waitSec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : (attempt < 2 ? 30 : 60);
-    waitSec = Math.min(waitSec, 65); // не более 65 сек
-
-    if (attempt >= 2) {
-      // 3 попытки исчерпаны
-      throw new Error('RATE_LIMIT: ' + msg);
-    }
-
-    // Показываем countdown в лоадере и ждём
-    await countdownWait(waitSec, attempt + 1);
-    return await callGeminiWithRetry(prompt, key, attempt + 1);
-  }
-
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    const msg = err?.error?.message || '';
-    const code = err?.error?.code || resp.status;
-    if (resp.status === 400) throw new Error('BAD_REQUEST: ' + (msg || 'Bad Request'));
-    if (resp.status === 403) throw new Error('FORBIDDEN: ' + (msg || 'Неверный API ключ'));
-    if (resp.status === 404) throw new Error('NOT_FOUND: Модель не найдена. ' + msg);
+    const msg = err?.error?.message || err?.message || '';
+    const code = resp.status;
+    if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ DeepSeek. ' + msg);
+    if (code === 402) throw new Error('BILLING: Недостаточно средств на балансе DeepSeek. Пополните на platform.deepseek.com');
+    if (code === 429) throw new Error('RATE_LIMIT: Превышен лимит запросов. Подождите немного. ' + msg);
+    if (code === 503) throw new Error('API_ERROR: Серверы DeepSeek перегружены, попробуйте позже.');
     throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
   const data = await resp.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Пустой ответ от Gemini');
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Пустой ответ от DeepSeek');
   return text;
-}
-
-function countdownWait(seconds, attempt) {
-  return new Promise(resolve => {
-    // Обновляем текст во всех видимых лоадерах
-    const loaders = document.querySelectorAll('.loader-wrap.visible span, .template-loading.visible span, .pdf-loading.visible span');
-    const origTexts = [...loaders].map(el => el.textContent);
-
-    let remaining = seconds;
-    const tick = () => {
-      loaders.forEach(el => {
-        el.textContent = '⏳ Лимит API — повтор через ' + remaining + ' сек (попытка ' + attempt + '/3)...';
-      });
-      if (remaining <= 0) {
-        loaders.forEach((el, i) => { el.textContent = origTexts[i] || 'ИИ анализирует...'; });
-        resolve();
-      } else {
-        remaining--;
-        setTimeout(tick, 1000);
-      }
-    };
-    tick();
-  });
 }
 
 function handleApiError(e) {
   const msg = e.message || '';
   if (msg === 'NO_API_KEY') {
-    toast('Не задан API ключ. Откройте настройки.', 'error');
+    toast('Не задан API ключ DeepSeek. Откройте настройки.', 'error');
     openSettings();
+  } else if (msg.startsWith('BILLING')) {
+    toast('Недостаточно средств на балансе DeepSeek. Пополните на platform.deepseek.com', 'warning');
   } else if (msg.startsWith('RATE_LIMIT')) {
-    const detail = msg.replace('RATE_LIMIT: ', '');
-    toast('Лимит запросов: ' + detail, 'warning');
+    toast('Превышен лимит запросов. Подождите немного и попробуйте снова.', 'warning');
   } else if (msg === 'NETWORK_ERROR') {
     toast('Нет подключения к интернету', 'error');
-  } else if (msg.startsWith('NOT_FOUND')) {
-    toast(msg.replace('NOT_FOUND: ', ''), 'error');
   } else if (msg.startsWith('FORBIDDEN')) {
-    toast('Доступ запрещён: ' + msg.replace('FORBIDDEN: ', ''), 'error');
+    toast('Неверный API ключ DeepSeek. Проверьте ключ в настройках.', 'error');
+    openSettings();
   } else if (msg.startsWith('BAD_REQUEST')) {
     toast('Ошибка запроса: ' + msg.replace('BAD_REQUEST: ', ''), 'error');
   } else {
