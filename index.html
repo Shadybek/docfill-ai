@@ -13,6 +13,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DocFill AI — Автозаполнение документов</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -969,6 +971,172 @@ input[type="text"], input[type="password"] {
   margin: 18px 0;
 }
 
+/* ===== TEMPLATE DROP ZONE (DOCX) ===== */
+.template-drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 4px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  transition: all 0.2s;
+  background: var(--bg-light);
+  user-select: none;
+}
+
+.template-drop-zone:hover,
+.template-drop-zone.dragover {
+  border-color: var(--accent);
+  background: #eef4fd;
+  color: var(--accent);
+}
+
+.template-drop-zone-icon {
+  margin-bottom: 8px;
+  opacity: 0.4;
+}
+
+.template-drop-zone:hover .template-drop-zone-icon,
+.template-drop-zone.dragover .template-drop-zone-icon {
+  opacity: 1;
+}
+
+.template-file-info {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  background: #eef4fd;
+  font-size: 12.5px;
+}
+
+.template-file-info.visible { display: flex; }
+
+.template-file-info-text {
+  flex: 1;
+  color: var(--accent);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-file-remove {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 500;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.template-file-remove:hover { background: #d8e8f8; }
+
+.template-loading {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #bdd0ee;
+  border-radius: 4px;
+  background: #eef4fd;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.template-loading.visible { display: flex; }
+
+/* Library template status (when selected from saved buttons) */
+.template-lib-info {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--gold);
+  border-radius: 4px;
+  background: #fdf8ee;
+  font-size: 12.5px;
+}
+
+.template-lib-info.visible { display: flex; }
+
+.template-lib-info-text {
+  flex: 1;
+  color: #7a5800;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-lib-remove {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  color: #7a5800;
+  font-size: 11.5px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 500;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.template-lib-remove:hover { background: #f0e6c0; }
+
+/* Docx result block */
+.docx-result {
+  display: none;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--success-bg);
+  border: 1.5px solid var(--success-border);
+  border-radius: 5px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.25s ease;
+}
+
+.docx-result.visible { display: flex; }
+
+.docx-result-body { flex: 1; }
+
+.docx-result-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success);
+  margin-bottom: 8px;
+}
+
+.docx-result-fields {
+  font-size: 12px;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-secondary);
+  background: var(--white);
+  border: 1px solid var(--success-border);
+  border-radius: 3px;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+}
+
 /* ===== PDF DROP ZONE ===== */
 .pdf-drop-zone {
   border: 2px dashed var(--border);
@@ -1173,9 +1341,50 @@ input[type="text"], input[type="password"] {
               <span class="card-header-title">Шаблон документа</span>
             </div>
             <div class="card-body">
-              <textarea id="templateText" class="doc-area mono"
-                placeholder="Вставьте текст шаблона сюда...&#10;Например:&#10;&#10;Договор №___&#10;Страхователь: ___&#10;ИНН: ___&#10;Дата начала страхования: ___&#10;Страховая сумма: ___"></textarea>
-              <div class="field-hint">Скопируйте текст из Word или PDF</div>
+
+              <!-- Drop zone для .docx -->
+              <div id="templateDropZone" class="template-drop-zone" onclick="document.getElementById('templateFileInput').click()">
+                <div class="template-drop-zone-icon">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="12" y1="18" x2="12" y2="12"/>
+                    <line x1="9" y1="15" x2="15" y2="15"/>
+                  </svg>
+                </div>
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Загрузите шаблон .docx</div>
+                <div>Перетащите файл или <strong>нажмите для выбора</strong></div>
+                <div style="font-size:11px;margin-top:4px;opacity:0.65;">Структура Word (таблицы, форматирование) сохранится</div>
+              </div>
+              <input type="file" id="templateFileInput" accept=".docx" style="display:none">
+
+              <!-- Лоадер -->
+              <div class="template-loading" id="templateLoading">
+                <div class="spinner"></div>
+                <span>Читаю структуру документа...</span>
+              </div>
+
+              <!-- Статус загруженного .docx файла -->
+              <div class="template-file-info" id="templateFileInfo">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span class="template-file-info-text" id="templateFileInfoText"></span>
+                <button class="template-file-remove" onclick="removeTemplateDocx()">✕ Убрать файл</button>
+              </div>
+
+              <!-- Статус выбранного шаблона из библиотеки -->
+              <div class="template-lib-info" id="templateLibInfo">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0">
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                </svg>
+                <span class="template-lib-info-text" id="templateLibInfoText"></span>
+                <button class="template-lib-remove" onclick="clearLibraryTemplate()">✕ Сбросить</button>
+              </div>
+
+              <div class="field-hint" style="margin-top:10px;">
+                Поля в шаблоне обозначаются как <code style="background:var(--bg-light);padding:1px 5px;border-radius:3px;font-size:11px;">___</code>
+              </div>
               <div class="char-counter" id="templateCounter">0 символов</div>
             </div>
           </div>
@@ -1242,6 +1451,24 @@ input[type="text"], input[type="password"] {
         <div class="loader-wrap" id="fillLoader">
           <div class="spinner"></div>
           <span>ИИ анализирует документы...</span>
+        </div>
+
+        <!-- Docx result (download mode) -->
+        <div class="docx-result" id="docxResultBlock">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <div class="docx-result-body">
+            <div class="docx-result-title">Документ заполнен и скачан!</div>
+            <div class="docx-result-fields" id="docxResultFields"></div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-secondary" style="height:32px;font-size:12px;" onclick="saveToHistory()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Сохранить в историю
+              </button>
+              <button class="btn btn-ghost" style="height:32px;font-size:12px;" onclick="clearDocxResult()">✕ Скрыть</button>
+            </div>
+          </div>
         </div>
 
         <!-- Result -->
@@ -1449,6 +1676,11 @@ let selectedTemplateId = null;
 let currentResult = '';
 let currentTemplateName = '';
 
+// Docx template state
+let templateDocxBuffer = null;   // ArrayBuffer исходного .docx файла
+let templateExtractedText = '';  // Текст для отправки в ИИ
+let templateFileName = '';       // Имя файла для отображения
+
 // ═══════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════
@@ -1469,6 +1701,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   initPdfZone();
+  initTemplateZone();
 });
 
 function initDemoTemplate() {
@@ -1641,15 +1874,28 @@ function selectTemplate(id) {
     return;
   }
 
-  const currentText = document.getElementById('templateText').value.trim();
-  if (currentText && !confirm('Заменить текущий текст шаблона?')) return;
+  // Если уже загружен другой шаблон — спросить
+  const hasTemplate = templateExtractedText || templateDocxBuffer;
+  if (hasTemplate && !confirm('Заменить текущий шаблон?')) return;
+
+  // Сбросить docx-файл если был
+  templateDocxBuffer = null;
+  templateFileName = '';
+  document.getElementById('templateFileInfo').classList.remove('visible');
+  document.getElementById('templateDropZone').style.display = '';
 
   selectedTemplateId = id;
   currentTemplateName = tpl.name;
+  templateExtractedText = tpl.template;
 
-  document.getElementById('templateText').value = tpl.template;
-  updateCounter('templateText', 'templateCounter');
-  autoResizeTextarea(document.getElementById('templateText'));
+  // Обновить счётчик символов
+  const n = templateExtractedText.length;
+  document.getElementById('templateCounter').textContent = n.toLocaleString('ru-RU') + ' символов';
+
+  // Показать статус библиотечного шаблона
+  document.getElementById('templateDropZone').style.display = 'none';
+  document.getElementById('templateLibInfoText').textContent = '📋 ' + tpl.name + ' — ' + n.toLocaleString('ru-RU') + ' символов (текстовый режим)';
+  document.getElementById('templateLibInfo').classList.add('visible');
 
   document.querySelectorAll('.tpl-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.id === id);
@@ -1664,8 +1910,16 @@ function selectTemplate(id) {
 function deselectTemplate() {
   selectedTemplateId = null;
   currentTemplateName = '';
+  templateExtractedText = '';
   document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tpl-btn-wrap').forEach(b => b.classList.remove('active'));
+  document.getElementById('templateLibInfo').classList.remove('visible');
+  document.getElementById('templateDropZone').style.display = '';
+  document.getElementById('templateCounter').textContent = '0 символов';
+}
+
+function clearLibraryTemplate() {
+  deselectTemplate();
 }
 
 function toggleTplMenu(id) {
@@ -1801,41 +2055,39 @@ function handleApiError(e) {
 //  SCREEN 1 — FILL DOCUMENT
 // ═══════════════════════════════════════════════════
 async function fillDocument() {
-  const templateText = document.getElementById('templateText').value.trim();
+  if (templateDocxBuffer) {
+    await fillDocumentDocx();
+  } else {
+    await fillDocumentText();
+  }
+}
+
+// ─── Текстовый режим (без .docx файла) ───
+async function fillDocumentText() {
+  const templateText = templateExtractedText.trim();
   const clientDoc = document.getElementById('clientDoc').value.trim();
 
-  // Validation
-  let hasError = false;
   if (!templateText) {
-    document.getElementById('templateText').classList.add('error-field');
-    hasError = true;
-  } else {
-    document.getElementById('templateText').classList.remove('error-field');
+    toast('Загрузите шаблон .docx или выберите шаблон из библиотеки', 'error');
+    document.getElementById('templateDropZone').style.borderColor = 'var(--error-border)';
+    setTimeout(() => { document.getElementById('templateDropZone').style.borderColor = ''; }, 2000);
+    return;
   }
   if (!clientDoc) {
     document.getElementById('clientDoc').classList.add('error-field');
-    hasError = true;
-  } else {
-    document.getElementById('clientDoc').classList.remove('error-field');
-  }
-  if (hasError) {
-    toast('Заполните оба поля: шаблон и документ клиента', 'error');
+    toast('Вставьте или загрузите документ от клиента', 'error');
     return;
   }
+  document.getElementById('clientDoc').classList.remove('error-field');
 
-  // Build prompt
   let prompt;
   if (selectedTemplateId) {
     const templates = getTemplates();
     const tpl = templates.find(t => t.id === selectedTemplateId);
     let rulesText = '';
     if (tpl && tpl.rules) {
-      try {
-        const parsed = JSON.parse(tpl.rules);
-        rulesText = JSON.stringify(parsed, null, 2);
-      } catch {
-        rulesText = tpl.rules;
-      }
+      try { rulesText = JSON.stringify(JSON.parse(tpl.rules), null, 2); }
+      catch { rulesText = tpl.rules; }
     }
     const extraInstructions = tpl?.instructions || '';
     prompt = `Ты специалист по заполнению страховых и юридических документов.
@@ -1863,9 +2115,9 @@ ${clientDoc}
 ЗАДАЧА: Внимательно изучи шаблон и найди все поля которые нужно заполнить (пустые строки, прочерки, скобки с описанием, знаки ___). Найди соответствующие данные во входящем документе клиента. Заполни шаблон этими данными. Верни ТОЛЬКО готовый заполненный документ, без объяснений. Если данных нет — пиши [НЕ УКАЗАНО]. Документы на русском и/или английском языке.`;
   }
 
-  // Show loader, hide result
   setFillLoading(true);
   document.getElementById('resultBlock').classList.remove('visible');
+  document.getElementById('docxResultBlock').classList.remove('visible');
 
   try {
     const result = await callGemini(prompt);
@@ -1881,6 +2133,91 @@ ${clientDoc}
   } finally {
     setFillLoading(false);
   }
+}
+
+// ─── Docx режим — заполняем XML и скачиваем ───
+async function fillDocumentDocx() {
+  const clientDoc = document.getElementById('clientDoc').value.trim();
+
+  if (!clientDoc) {
+    document.getElementById('clientDoc').classList.add('error-field');
+    toast('Вставьте или загрузите документ от клиента', 'error');
+    return;
+  }
+  document.getElementById('clientDoc').classList.remove('error-field');
+
+  // Считаем количество полей ___ в шаблоне
+  const placeholders = [...templateExtractedText.matchAll(/_+/g)];
+  const count = placeholders.length;
+
+  // Строим правила если выбран шаблон из библиотеки
+  let rulesText = '';
+  let extraInstructions = '';
+  if (selectedTemplateId) {
+    const templates = getTemplates();
+    const tpl = templates.find(t => t.id === selectedTemplateId);
+    if (tpl && tpl.rules) {
+      try { rulesText = JSON.stringify(JSON.parse(tpl.rules), null, 2); }
+      catch { rulesText = tpl.rules; }
+    }
+    extraInstructions = tpl?.instructions || '';
+  }
+
+  const prompt = `Ты специалист по заполнению страховых и юридических документов.
+${rulesText ? 'ПРАВИЛА ЗАПОЛНЕНИЯ:\n' + rulesText + '\n' : ''}${extraInstructions ? 'ИНСТРУКЦИИ:\n' + extraInstructions + '\n' : ''}
+ШАБЛОН ДОКУМЕНТА (содержит ${count} незаполненных поля/полей, обозначенных ___):
+${templateExtractedText}
+
+ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
+${clientDoc}
+
+ЗАДАЧА: Найди данные для каждого поля ___ в шаблоне строго по порядку их появления (сверху вниз, слева направо).
+Верни ТОЛЬКО JSON объект без markdown-обёртки и без комментариев:
+{"1": "значение поля 1", "2": "значение поля 2", ...}
+Количество ключей: ${count}. Если данных нет — пиши "[НЕ УКАЗАНО]". Документы на русском и/или английском языке.`;
+
+  setFillLoading(true);
+  document.getElementById('resultBlock').classList.remove('visible');
+  document.getElementById('docxResultBlock').classList.remove('visible');
+
+  try {
+    const aiResponse = await callGemini(prompt);
+
+    // Парсим JSON из ответа ИИ
+    const jsonStr = aiResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    let replacements;
+    try {
+      replacements = JSON.parse(jsonStr);
+    } catch {
+      throw new Error('ИИ вернул некорректный формат ответа. Попробуйте ещё раз.');
+    }
+
+    // Применяем замены к XML и скачиваем
+    const filledBuffer = await applyReplacementsToDocx(templateDocxBuffer, replacements);
+    const outName = templateFileName.replace(/\.docx$/i, '_заполнен.docx');
+    downloadBuffer(filledBuffer, outName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+    // Формируем читаемое резюме для отображения
+    const summary = Object.entries(replacements)
+      .map(([k, v]) => 'Поле ' + k + ': ' + v)
+      .join('\n');
+    currentResult = summary;
+    currentTemplateName = templateFileName;
+
+    document.getElementById('docxResultFields').textContent = summary;
+    document.getElementById('docxResultBlock').classList.add('visible');
+    document.getElementById('docxResultBlock').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast('Файл «' + outName + '» скачивается!', 'success');
+
+  } catch (e) {
+    handleApiError(e);
+  } finally {
+    setFillLoading(false);
+  }
+}
+
+function clearDocxResult() {
+  document.getElementById('docxResultBlock').classList.remove('visible');
 }
 
 function setFillLoading(on) {
@@ -2148,7 +2485,6 @@ function autoResizeTextarea(ta) {
 
 function setupCharCounters() {
   const pairs = [
-    ['templateText', 'templateCounter'],
     ['clientDoc', 'clientCounter'],
     ['resultText', 'resultCounter'],
     ['trainTemplate', 'trainTemplateCounter'],
@@ -2160,16 +2496,6 @@ function setupCharCounters() {
     if (!ta) return;
     ta.addEventListener('input', () => updateCounter(taId, counterId));
   });
-
-  // Баг 9: сброс выбранного шаблона при ручном вводе в поле шаблона
-  const templateTextEl = document.getElementById('templateText');
-  if (templateTextEl) {
-    templateTextEl.addEventListener('input', () => {
-      if (selectedTemplateId !== null) {
-        deselectTemplate();
-      }
-    });
-  }
 
   // Закрывать выпадающие меню шаблонов при клике вне
   document.addEventListener('click', () => {
@@ -2208,6 +2534,170 @@ function toast(message, type = 'info') {
     el.classList.add('out');
     setTimeout(() => el.remove(), 300);
   }, 4000);
+}
+
+// ═══════════════════════════════════════════════════
+//  DOCX TEMPLATE SUPPORT
+// ═══════════════════════════════════════════════════
+function initTemplateZone() {
+  const zone = document.getElementById('templateDropZone');
+  const input = document.getElementById('templateFileInput');
+  if (!zone || !input) return;
+
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.add('dragover');
+  });
+
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) handleTemplateFile(e.dataTransfer.files[0]);
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) handleTemplateFile(input.files[0]);
+  });
+}
+
+async function handleTemplateFile(file) {
+  if (!file.name.toLowerCase().endsWith('.docx')) {
+    toast('Выберите файл в формате .docx', 'error');
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    toast('Файл слишком большой (макс. 20 МБ)', 'warning');
+    return;
+  }
+  if (typeof mammoth === 'undefined') {
+    toast('Библиотека mammoth.js не загружена. Проверьте интернет-соединение.', 'error');
+    return;
+  }
+  if (typeof JSZip === 'undefined') {
+    toast('Библиотека JSZip не загружена. Проверьте интернет-соединение.', 'error');
+    return;
+  }
+
+  setTemplateLoading(true);
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+    const text = result.value;
+
+    if (!text || !text.trim()) {
+      toast('Не удалось извлечь текст из файла. Файл может быть повреждён.', 'error');
+      setTemplateLoading(false);
+      return;
+    }
+
+    // Сбросить библиотечный шаблон если был
+    if (selectedTemplateId !== null) {
+      selectedTemplateId = null;
+      currentTemplateName = '';
+      document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tpl-btn-wrap').forEach(b => b.classList.remove('active'));
+    }
+    document.getElementById('templateLibInfo').classList.remove('visible');
+
+    templateDocxBuffer = buffer;
+    templateExtractedText = text;
+    templateFileName = file.name;
+    currentTemplateName = file.name;
+
+    const placeholders = [...text.matchAll(/_+/g)].length;
+    const chars = text.length;
+
+    document.getElementById('templateCounter').textContent = chars.toLocaleString('ru-RU') + ' символов';
+    document.getElementById('templateFileInfoText').textContent =
+      '📄 ' + file.name + ' — ' + placeholders + ' полей, ' + chars.toLocaleString('ru-RU') + ' симв.';
+    document.getElementById('templateDropZone').style.display = 'none';
+    document.getElementById('templateFileInfo').classList.add('visible');
+
+    toast('Шаблон загружен: ' + placeholders + ' полей для заполнения', 'success');
+  } catch (e) {
+    toast('Ошибка чтения файла: ' + e.message, 'error');
+  } finally {
+    setTemplateLoading(false);
+  }
+}
+
+function setTemplateLoading(on) {
+  document.getElementById('templateLoading').classList.toggle('visible', on);
+  if (on) {
+    document.getElementById('templateDropZone').style.display = 'none';
+    document.getElementById('templateFileInfo').classList.remove('visible');
+  }
+  const fillBtn = document.getElementById('fillBtn');
+  if (fillBtn) fillBtn.disabled = on;
+}
+
+function removeTemplateDocx() {
+  document.getElementById('templateFileInput').value = '';
+  templateDocxBuffer = null;
+  templateExtractedText = '';
+  templateFileName = '';
+  currentTemplateName = '';
+  document.getElementById('templateFileInfo').classList.remove('visible');
+  document.getElementById('templateDropZone').style.display = '';
+  document.getElementById('templateCounter').textContent = '0 символов';
+  document.getElementById('docxResultBlock').classList.remove('visible');
+}
+
+async function applyReplacementsToDocx(buffer, replacements) {
+  const zip = await JSZip.loadAsync(buffer);
+  const xmlFile = zip.file('word/document.xml');
+  if (!xmlFile) throw new Error('Не удалось прочитать word/document.xml');
+
+  let xml = await xmlFile.async('string');
+
+  // Заменяем ___ только внутри элементов <w:t> (текстовые узлы Word)
+  // Это гарантирует, что XML-атрибуты и теги не затронуты
+  let idx = 1;
+  xml = xml.replace(/(<w:t(?:\s[^>]*)?>)([\s\S]*?)(<\/w:t>)/g, (match, open, content, close) => {
+    if (!/_/.test(content)) return match;
+    const newContent = content.replace(/_+/g, () => {
+      const val = replacements[String(idx)] !== undefined
+        ? String(replacements[String(idx)])
+        : '[НЕ УКАЗАНО]';
+      idx++;
+      return xmlEscape(val);
+    });
+    return open + newContent + close;
+  });
+
+  zip.file('word/document.xml', xml);
+
+  return await zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+}
+
+function xmlEscape(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function downloadBuffer(buffer, filename, mimeType) {
+  const blob = new Blob([buffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 // ═══════════════════════════════════════════════════
