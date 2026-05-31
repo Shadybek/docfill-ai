@@ -2011,17 +2011,51 @@ function saveApiKey() {
 }
 
 // ═══════════════════════════════════════════════════
-//  OPENROUTER API CALL
+//  OPENROUTER API CALL  (с авто-retry и fallback моделью)
 // ═══════════════════════════════════════════════════
+
+// Резервные бесплатные модели — используются если основная перегружена
+const FALLBACK_MODELS = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'meta-llama/llama-3.1-8b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+  'google/gemma-2-9b-it:free',
+];
+
 async function callGemini(prompt) {
   const key = getApiKey();
   if (!key) throw new Error('NO_API_KEY');
 
-  const model = localStorage.getItem('docfill_model') || 'meta-llama/llama-3.3-70b-instruct:free';
-  const url = 'https://openrouter.ai/api/v1/chat/completions';
+  const preferredModel = localStorage.getItem('docfill_model') || FALLBACK_MODELS[0];
 
+  // Пробуем предпочтительную модель, затем резервные
+  const modelsToTry = [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
+
+  let lastError = null;
+  for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
+    const model = modelsToTry[attempt];
+    if (attempt > 0) {
+      // Показываем что переключаемся
+      showLoaderText('Модель перегружена, пробую: ' + model.split('/')[1] + '...');
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    try {
+      return await callOpenRouter(prompt, key, model);
+    } catch (e) {
+      lastError = e;
+      // Продолжаем только если модель перегружена (429/503)
+      if (!e.message.startsWith('RATE_LIMIT') && !e.message.startsWith('API_ERROR')) {
+        throw e; // auth/network ошибки — сразу пробрасываем
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function callOpenRouter(prompt, key, model) {
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
   const body = {
-    model: model,
+    model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
     max_tokens: 4096
@@ -2048,16 +2082,21 @@ async function callGemini(prompt) {
     const msg = err?.error?.message || '';
     const code = resp.status;
     if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ OpenRouter.');
-    if (code === 402) throw new Error('BILLING: Недостаточно кредитов. Пополните на openrouter.ai/credits');
-    if (code === 429) throw new Error('RATE_LIMIT: ' + (msg || 'Превышен лимит.'));
-    if (code === 503 || code === 502) throw new Error('API_ERROR: Серверы перегружены, попробуйте позже.');
+    if (code === 402) throw new Error('BILLING: Пополните баланс на openrouter.ai/credits');
+    if (code === 429 || code === 503 || code === 502) throw new Error('RATE_LIMIT: модель ' + model + ' перегружена.');
     throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
   const data = await resp.json();
   const text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Пустой ответ от OpenRouter');
+  if (!text) throw new Error('RATE_LIMIT: пустой ответ, модель недоступна.');
   return text;
+}
+
+function showLoaderText(text) {
+  document.querySelectorAll('.loader-wrap.visible span, .template-loading.visible span').forEach(el => {
+    el.textContent = text;
+  });
 }
 
 function handleApiError(e) {
@@ -2066,7 +2105,7 @@ function handleApiError(e) {
     toast('Не задан API ключ OpenRouter. Откройте настройки.', 'error');
     openSettings();
   } else if (msg.startsWith('RATE_LIMIT')) {
-    toast('Превышен лимит. Подождите немного и попробуйте снова.', 'warning');
+    toast('Все бесплатные модели перегружены. Попробуйте через 30 секунд или смените модель в ⚙️', 'warning');
   } else if (msg.startsWith('BILLING')) {
     toast('Недостаточно кредитов OpenRouter. Проверьте баланс на openrouter.ai/credits', 'warning');
   } else if (msg === 'NETWORK_ERROR') {
