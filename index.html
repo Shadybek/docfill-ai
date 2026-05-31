@@ -1620,11 +1620,11 @@ input[type="text"], input[type="password"] {
       <div class="form-group" style="margin-top:14px;">
         <label class="form-label" for="modelSelect">Модель Gemini</label>
         <select id="modelSelect" style="width:100%;height:38px;padding:0 10px;border:1.5px solid var(--border);border-radius:4px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;background:var(--white);color:var(--text-primary);outline:none;">
-          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (рекомендуется)</option>
-          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (самый быстрый)</option>
-          <option value="llama3-70b-8192">llama3-70b-8192</option>
-          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
-          <option value="gemma2-9b-it">gemma2-9b-it</option>
+          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant — 20 000 TPM ✅ рекомендуется</option>
+          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile — 6 000 TPM (умнее, но лимит)</option>
+          <option value="llama3-70b-8192">llama3-70b-8192 — 6 000 TPM</option>
+          <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 — 5 000 TPM</option>
+          <option value="gemma2-9b-it">gemma2-9b-it — 15 000 TPM</option>
         </select>
       </div>
       <div class="settings-info">
@@ -1990,7 +1990,7 @@ function updateApiStatus() {
 function openSettings() {
   document.getElementById('apiKeyInput').value = getApiKey();
   const sel = document.getElementById('modelSelect');
-  if (sel) sel.value = localStorage.getItem('docfill_model') || 'llama-3.3-70b-versatile';
+  if (sel) sel.value = localStorage.getItem('docfill_model') || 'llama-3.1-8b-instant';
   document.getElementById('settingsModal').classList.add('visible');
 }
 
@@ -2016,7 +2016,7 @@ async function callGemini(prompt) {
   const key = getApiKey();
   if (!key) throw new Error('NO_API_KEY');
 
-  const model = localStorage.getItem('docfill_model') || 'llama-3.3-70b-versatile';
+  const model = localStorage.getItem('docfill_model') || 'llama-3.1-8b-instant';
   const url = 'https://api.groq.com/openai/v1/chat/completions';
 
   const body = {
@@ -2126,7 +2126,7 @@ ${templateText}
 ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
 ${clientDoc}
 
-ЗАДАЧА: Заполни шаблон данными из входящего документа, строго следуя правилам. Верни ТОЛЬКО готовый заполненный документ, без объяснений и комментариев. Если какие-то данные отсутствуют во входящем документе — оставь поле пустым или напиши [НЕ УКАЗАНО]. Документы на русском и/или английском языке.`;
+ЗАДАЧА: Заполни шаблон данными из входящего документа. Верни ТОЛЬКО готовый заполненный документ, без объяснений. Нет данных → [НЕ УКАЗАНО]. Язык: русский.`;
   } else {
     prompt = `Ты специалист по заполнению страховых и юридических документов.
 
@@ -2136,7 +2136,7 @@ ${templateText}
 ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
 ${clientDoc}
 
-ЗАДАЧА: Внимательно изучи шаблон и найди все поля которые нужно заполнить (пустые строки, прочерки, скобки с описанием, знаки ___). Найди соответствующие данные во входящем документе клиента. Заполни шаблон этими данными. Верни ТОЛЬКО готовый заполненный документ, без объяснений. Если данных нет — пиши [НЕ УКАЗАНО]. Документы на русском и/или английском языке.`;
+ЗАДАЧА: Найди все поля для заполнения (___  прочерки, скобки). Заполни данными из документа клиента. Верни ТОЛЬКО готовый документ без объяснений. Нет данных → [НЕ УКАЗАНО]. Язык: русский.`;
   }
 
   setFillLoading(true);
@@ -2208,23 +2208,22 @@ async function fillDocumentDocx() {
     extraInstructions = tpl?.instructions || '';
   }
 
-  const prompt = `Ты специалист по заполнению страховых и юридических договоров.
+  // Обрезаем текст шаблона чтобы не дублировать (поля уже есть в fieldList)
+  const templateShort = templateExtractedText.slice(0, 800);
+
+  const prompt = `Заполни поля договора данными из документа клиента.
 ${rulesText ? 'ПРАВИЛА:\n' + rulesText + '\n' : ''}${extraInstructions ? 'ИНСТРУКЦИИ:\n' + extraInstructions + '\n' : ''}
-ПОЛЯ ДЛЯ ЗАПОЛНЕНИЯ (пронумерованы по порядку появления в шаблоне, в скобках — текст рядом с полем):
+ПОЛЯ (номер — текст рядом с полем — нужно заполнить):
 ${fieldList}
 
-ПОЛНЫЙ ТЕКСТ ШАБЛОНА (для контекста):
-${templateExtractedText}
+НАЧАЛО ШАБЛОНА (контекст):
+${templateShort}
 
-ДОКУМЕНТ КЛИЕНТА (источник данных):
+ДОКУМЕНТ КЛИЕНТА:
 ${clientDoc}
 
-ЗАДАЧА: Для каждого пронумерованного поля найди подходящее значение из документа клиента.
-Используй текст в скобках чтобы понять что именно нужно вставить в это поле.
-Верни ТОЛЬКО JSON без markdown-обёртки:
-{"1": "значение", "2": "значение", ...}
-Ровно ${count} ключей. Если данных нет — пиши "[НЕ УКАЗАНО]".
-Языки: русский и/или английский.`;
+Верни ТОЛЬКО JSON: {"1":"значение","2":"значение",...}
+Ровно ${count} ключей. Нет данных → "[НЕ УКАЗАНО]". Язык: русский.`;
 
   setFillLoading(true);
   document.getElementById('resultBlock').classList.remove('visible');
