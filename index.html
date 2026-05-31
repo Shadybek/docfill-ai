@@ -12,6 +12,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DocFill AI — Автозаполнение документов</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -968,6 +969,97 @@ input[type="text"], input[type="password"] {
   margin: 18px 0;
 }
 
+/* ===== PDF DROP ZONE ===== */
+.pdf-drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 4px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  transition: all 0.2s;
+  margin-bottom: 10px;
+  background: var(--bg-light);
+  user-select: none;
+}
+
+.pdf-drop-zone:hover,
+.pdf-drop-zone.dragover {
+  border-color: var(--accent);
+  background: #eef4fd;
+  color: var(--accent);
+}
+
+.pdf-drop-zone-icon {
+  margin-bottom: 6px;
+  opacity: 0.5;
+}
+
+.pdf-drop-zone:hover .pdf-drop-zone-icon,
+.pdf-drop-zone.dragover .pdf-drop-zone-icon {
+  opacity: 1;
+}
+
+.pdf-status {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--success-border);
+  border-radius: 4px;
+  background: var(--success-bg);
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+
+.pdf-status.visible { display: flex; }
+
+.pdf-status-info {
+  flex: 1;
+  color: var(--success);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-status-remove {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--success-border);
+  border-radius: 3px;
+  color: var(--success);
+  font-size: 11.5px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 500;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.pdf-status-remove:hover {
+  background: #d0eddc;
+}
+
+.pdf-loading {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid #bdd0ee;
+  border-radius: 4px;
+  background: #eef4fd;
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.pdf-loading.visible { display: flex; }
+
 /* ===== RESPONSIVE TWEAKS ===== */
 @media (max-width: 900px) {
   .two-cols { grid-template-columns: 1fr; }
@@ -1098,9 +1190,39 @@ input[type="text"], input[type="password"] {
               <span class="card-header-title">Документ от клиента</span>
             </div>
             <div class="card-body">
+              <!-- PDF drop zone -->
+              <div id="pdfDropZone" class="pdf-drop-zone" onclick="document.getElementById('pdfFileInput').click()">
+                <div class="pdf-drop-zone-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="12" y1="18" x2="12" y2="12"/>
+                    <line x1="9" y1="15" x2="15" y2="15"/>
+                  </svg>
+                </div>
+                Перетащите PDF сюда или <strong>нажмите для выбора файла</strong><br>
+                <span style="font-size:11px;opacity:0.7;">(или вставьте текст вручную ниже)</span>
+              </div>
+              <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+
+              <!-- PDF loading state -->
+              <div class="pdf-loading" id="pdfLoading">
+                <div class="spinner"></div>
+                <span>Извлекаю текст из PDF...</span>
+              </div>
+
+              <!-- PDF success status -->
+              <div class="pdf-status" id="pdfStatus">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span class="pdf-status-info" id="pdfStatusText"></span>
+                <button class="pdf-status-remove" onclick="removePdf()">✕ Убрать файл</button>
+              </div>
+
               <textarea id="clientDoc" class="doc-area mono"
                 placeholder="Вставьте документ от клиента...&#10;Например заявление на перестрахование,&#10;письмо с реквизитами, скан-копия текстом&#10;&#10;ООО «Ромашка», ИНН 7712345678&#10;Просим заключить договор..."></textarea>
-              <div class="field-hint">Скопируйте текст из любого документа</div>
+              <div class="field-hint">Или скопируйте текст вручную из любого документа</div>
               <div class="char-counter" id="clientCounter">0 символов</div>
             </div>
           </div>
@@ -1312,6 +1434,14 @@ input[type="text"], input[type="password"] {
 
 <script>
 // ═══════════════════════════════════════════════════
+//  PDF.JS SETUP
+// ═══════════════════════════════════════════════════
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ═══════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════
 let currentScreen = 'fill';
@@ -1337,6 +1467,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('historyModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeHistoryModal();
   });
+
+  initPdfZone();
 });
 
 function initDemoTemplate() {
@@ -2076,6 +2208,119 @@ function toast(message, type = 'info') {
     el.classList.add('out');
     setTimeout(() => el.remove(), 300);
   }, 4000);
+}
+
+// ═══════════════════════════════════════════════════
+//  PDF SUPPORT
+// ═══════════════════════════════════════════════════
+function initPdfZone() {
+  const zone = document.getElementById('pdfDropZone');
+  const input = document.getElementById('pdfFileInput');
+  if (!zone || !input) return;
+
+  // Drag & Drop
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.add('dragover');
+  });
+
+  zone.addEventListener('dragleave', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+  });
+
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handlePdfFile(file);
+  });
+
+  // File input change
+  input.addEventListener('change', () => {
+    if (input.files[0]) handlePdfFile(input.files[0]);
+  });
+}
+
+async function handlePdfFile(file) {
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    toast('Выберите файл в формате PDF', 'error');
+    return;
+  }
+
+  if (file.size > 50 * 1024 * 1024) {
+    toast('Файл слишком большой (макс. 50 МБ)', 'warning');
+    return;
+  }
+
+  if (typeof pdfjsLib === 'undefined') {
+    toast('Библиотека PDF.js не загружена. Проверьте подключение к интернету.', 'error');
+    return;
+  }
+
+  setPdfLoading(true);
+
+  try {
+    const { text, pages } = await extractTextFromPDF(file);
+
+    if (!text) {
+      toast('PDF содержит только изображения — текст не удалось извлечь. Попробуйте скопировать текст вручную.', 'warning');
+      setPdfLoading(false);
+      return;
+    }
+
+    const clientDoc = document.getElementById('clientDoc');
+    clientDoc.value = text;
+    updateCounter('clientDoc', 'clientCounter');
+    autoResizeTextarea(clientDoc);
+
+    showPdfStatus(file.name, pages, text.length);
+    toast('PDF загружен: ' + pages + ' стр., ' + text.length.toLocaleString('ru-RU') + ' символов извлечено', 'success');
+  } catch (e) {
+    toast('Не удалось прочитать PDF. Попробуйте скопировать текст вручную.', 'error');
+  } finally {
+    setPdfLoading(false);
+  }
+}
+
+async function extractTextFromPDF(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += '[Страница ' + i + ']\n' + pageText + '\n\n';
+  }
+  return { text: fullText.trim(), pages: pdf.numPages };
+}
+
+function setPdfLoading(on) {
+  document.getElementById('pdfDropZone').style.display = on ? 'none' : '';
+  document.getElementById('pdfLoading').classList.toggle('visible', on);
+  document.getElementById('pdfStatus').classList.remove('visible');
+  const fillBtn = document.getElementById('fillBtn');
+  if (fillBtn) fillBtn.disabled = on;
+}
+
+function showPdfStatus(fileName, pages, chars) {
+  document.getElementById('pdfDropZone').style.display = 'none';
+  document.getElementById('pdfLoading').classList.remove('visible');
+  document.getElementById('pdfStatusText').textContent =
+    '✓ ' + fileName + ' — ' + pages + ' стр., ' + chars.toLocaleString('ru-RU') + ' симв.';
+  document.getElementById('pdfStatus').classList.add('visible');
+}
+
+function removePdf() {
+  document.getElementById('pdfFileInput').value = '';
+  document.getElementById('clientDoc').value = '';
+  updateCounter('clientDoc', 'clientCounter');
+  autoResizeTextarea(document.getElementById('clientDoc'));
+  document.getElementById('pdfStatus').classList.remove('visible');
+  document.getElementById('pdfDropZone').style.display = '';
 }
 
 // ═══════════════════════════════════════════════════
