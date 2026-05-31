@@ -1352,11 +1352,11 @@ input[type="text"], input[type="password"] {
                     <line x1="9" y1="15" x2="15" y2="15"/>
                   </svg>
                 </div>
-                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Загрузите шаблон .docx</div>
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Загрузите шаблон документа</div>
                 <div>Перетащите файл или <strong>нажмите для выбора</strong></div>
-                <div style="font-size:11px;margin-top:4px;opacity:0.65;">Структура Word (таблицы, форматирование) сохранится</div>
+                <div style="font-size:11px;margin-top:4px;opacity:0.65;">.docx (форматирование сохраняется) или .pdf (только текст)</div>
               </div>
-              <input type="file" id="templateFileInput" accept=".docx" style="display:none">
+              <input type="file" id="templateFileInput" accept=".docx,.pdf" style="display:none">
 
               <!-- Лоадер -->
               <div class="template-loading" id="templateLoading">
@@ -1409,10 +1409,10 @@ input[type="text"], input[type="password"] {
                     <line x1="9" y1="15" x2="15" y2="15"/>
                   </svg>
                 </div>
-                Перетащите PDF сюда или <strong>нажмите для выбора файла</strong><br>
+                Перетащите <strong>PDF</strong> или <strong>DOCX</strong> сюда, или <strong>нажмите для выбора</strong><br>
                 <span style="font-size:11px;opacity:0.7;">(или вставьте текст вручную ниже)</span>
               </div>
-              <input type="file" id="pdfFileInput" accept=".pdf" style="display:none">
+              <input type="file" id="pdfFileInput" accept=".pdf,.docx" style="display:none">
 
               <!-- PDF loading state -->
               <div class="pdf-loading" id="pdfLoading">
@@ -2565,20 +2565,16 @@ function initTemplateZone() {
 }
 
 async function handleTemplateFile(file) {
-  if (!file.name.toLowerCase().endsWith('.docx')) {
-    toast('Выберите файл в формате .docx', 'error');
+  const name = file.name.toLowerCase();
+  const isDocx = name.endsWith('.docx');
+  const isPdf = name.endsWith('.pdf');
+
+  if (!isDocx && !isPdf) {
+    toast('Поддерживаются файлы .docx и .pdf', 'error');
     return;
   }
   if (file.size > 20 * 1024 * 1024) {
     toast('Файл слишком большой (макс. 20 МБ)', 'warning');
-    return;
-  }
-  if (typeof mammoth === 'undefined') {
-    toast('Библиотека mammoth.js не загружена. Проверьте интернет-соединение.', 'error');
-    return;
-  }
-  if (typeof JSZip === 'undefined') {
-    toast('Библиотека JSZip не загружена. Проверьте интернет-соединение.', 'error');
     return;
   }
 
@@ -2586,11 +2582,35 @@ async function handleTemplateFile(file) {
 
   try {
     const buffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
-    const text = result.value;
+    let text = '';
+
+    if (isDocx) {
+      if (typeof mammoth === 'undefined') {
+        toast('Библиотека mammoth.js не загружена. Проверьте интернет.', 'error');
+        setTemplateLoading(false); return;
+      }
+      if (typeof JSZip === 'undefined') {
+        toast('Библиотека JSZip не загружена. Проверьте интернет.', 'error');
+        setTemplateLoading(false); return;
+      }
+      const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+      text = result.value;
+    } else {
+      // PDF
+      if (typeof pdfjsLib === 'undefined') {
+        toast('Библиотека PDF.js не загружена. Проверьте интернет.', 'error');
+        setTemplateLoading(false); return;
+      }
+      const { text: pdfText } = await extractTextFromPDF_buffer(buffer);
+      text = pdfText;
+    }
 
     if (!text || !text.trim()) {
-      toast('Не удалось извлечь текст из файла. Файл может быть повреждён.', 'error');
+      if (isPdf) {
+        toast('PDF содержит только изображения — текст не удалось извлечь. Попробуйте .docx файл.', 'warning');
+      } else {
+        toast('Не удалось извлечь текст из файла. Файл может быть повреждён.', 'error');
+      }
       setTemplateLoading(false);
       return;
     }
@@ -2604,21 +2624,27 @@ async function handleTemplateFile(file) {
     }
     document.getElementById('templateLibInfo').classList.remove('visible');
 
-    templateDocxBuffer = buffer;
+    // DOCX сохраняет буфер для заполнения XML, PDF — только текст
+    templateDocxBuffer = isDocx ? buffer : null;
     templateExtractedText = text;
     templateFileName = file.name;
     currentTemplateName = file.name;
 
     const placeholders = [...text.matchAll(/_+/g)].length;
     const chars = text.length;
+    const icon = isDocx ? '📄' : '📋';
+    const modeNote = isDocx ? '' : ' (текстовый режим)';
 
     document.getElementById('templateCounter').textContent = chars.toLocaleString('ru-RU') + ' символов';
     document.getElementById('templateFileInfoText').textContent =
-      '📄 ' + file.name + ' — ' + placeholders + ' полей, ' + chars.toLocaleString('ru-RU') + ' симв.';
+      icon + ' ' + file.name + ' — ' + placeholders + ' полей, ' + chars.toLocaleString('ru-RU') + ' симв.' + modeNote;
     document.getElementById('templateDropZone').style.display = 'none';
     document.getElementById('templateFileInfo').classList.add('visible');
 
-    toast('Шаблон загружен: ' + placeholders + ' полей для заполнения', 'success');
+    const modeMsg = isDocx
+      ? 'Шаблон .docx загружен: ' + placeholders + ' полей. Результат будет скачан как .docx'
+      : 'Шаблон PDF загружен: ' + placeholders + ' полей. Результат будет в текстовом виде';
+    toast(modeMsg, 'success');
   } catch (e) {
     toast('Ошибка чтения файла: ' + e.message, 'error');
   } finally {
@@ -2735,28 +2761,50 @@ function initPdfZone() {
 }
 
 async function handlePdfFile(file) {
-  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-    toast('Выберите файл в формате PDF', 'error');
+  const name = file.name.toLowerCase();
+  const isPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
+  const isDocx = name.endsWith('.docx');
+
+  if (!isPdf && !isDocx) {
+    toast('Поддерживаются файлы .pdf и .docx', 'error');
     return;
   }
-
   if (file.size > 50 * 1024 * 1024) {
     toast('Файл слишком большой (макс. 50 МБ)', 'warning');
-    return;
-  }
-
-  if (typeof pdfjsLib === 'undefined') {
-    toast('Библиотека PDF.js не загружена. Проверьте подключение к интернету.', 'error');
     return;
   }
 
   setPdfLoading(true);
 
   try {
-    const { text, pages } = await extractTextFromPDF(file);
+    let text = '';
+    let pages = null;
 
-    if (!text) {
-      toast('PDF содержит только изображения — текст не удалось извлечь. Попробуйте скопировать текст вручную.', 'warning');
+    if (isPdf) {
+      if (typeof pdfjsLib === 'undefined') {
+        toast('Библиотека PDF.js не загружена. Проверьте интернет.', 'error');
+        setPdfLoading(false); return;
+      }
+      const result = await extractTextFromPDF(file);
+      text = result.text;
+      pages = result.pages;
+    } else {
+      // DOCX
+      if (typeof mammoth === 'undefined') {
+        toast('Библиотека mammoth.js не загружена. Проверьте интернет.', 'error');
+        setPdfLoading(false); return;
+      }
+      const buffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+      text = result.value;
+    }
+
+    if (!text || !text.trim()) {
+      if (isPdf) {
+        toast('PDF содержит только изображения — текст не удалось извлечь. Попробуйте скопировать текст вручную.', 'warning');
+      } else {
+        toast('Не удалось извлечь текст из .docx. Попробуйте скопировать текст вручную.', 'warning');
+      }
       setPdfLoading(false);
       return;
     }
@@ -2766,13 +2814,32 @@ async function handlePdfFile(file) {
     updateCounter('clientDoc', 'clientCounter');
     autoResizeTextarea(clientDoc);
 
+    const label = isPdf
+      ? (pages + ' стр., ' + text.length.toLocaleString('ru-RU') + ' символов')
+      : (text.length.toLocaleString('ru-RU') + ' символов');
     showPdfStatus(file.name, pages, text.length);
-    toast('PDF загружен: ' + pages + ' стр., ' + text.length.toLocaleString('ru-RU') + ' символов извлечено', 'success');
+
+    const msg = isPdf
+      ? 'PDF загружен: ' + pages + ' стр., ' + text.length.toLocaleString('ru-RU') + ' символов'
+      : 'DOCX загружен: ' + text.length.toLocaleString('ru-RU') + ' символов извлечено';
+    toast(msg, 'success');
   } catch (e) {
-    toast('Не удалось прочитать PDF. Попробуйте скопировать текст вручную.', 'error');
+    toast('Не удалось прочитать файл. Попробуйте скопировать текст вручную.', 'error');
   } finally {
     setPdfLoading(false);
   }
+}
+
+async function extractTextFromPDF_buffer(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += '[Страница ' + i + ']\n' + pageText + '\n\n';
+  }
+  return { text: fullText.trim(), pages: pdf.numPages };
 }
 
 async function extractTextFromPDF(file) {
@@ -2799,8 +2866,9 @@ function setPdfLoading(on) {
 function showPdfStatus(fileName, pages, chars) {
   document.getElementById('pdfDropZone').style.display = 'none';
   document.getElementById('pdfLoading').classList.remove('visible');
+  const pagesStr = pages ? ' — ' + pages + ' стр.,' : ' —';
   document.getElementById('pdfStatusText').textContent =
-    '✓ ' + fileName + ' — ' + pages + ' стр., ' + chars.toLocaleString('ru-RU') + ' симв.';
+    '✓ ' + fileName + pagesStr + ' ' + chars.toLocaleString('ru-RU') + ' симв.';
   document.getElementById('pdfStatus').classList.add('visible');
 }
 
