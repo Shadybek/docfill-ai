@@ -2104,11 +2104,9 @@ async function fillDocumentText() {
   }
   document.getElementById('clientDoc').classList.remove('error-field');
 
-  // Обрезаем до ~3500 символов каждую часть (бюджет ~6000 токенов)
-  const TPL_LIMIT = 3500;
-  const CLI_LIMIT = 3500;
-  const tplTrimmed = templateText.length > TPL_LIMIT ? templateText.slice(0, TPL_LIMIT) + '\n...[обрезано]' : templateText;
-  const cliTrimmed = clientDoc.length > CLI_LIMIT ? clientDoc.slice(0, CLI_LIMIT) + '\n...[обрезано]' : clientDoc;
+  // Жёсткий лимит: каждая часть не более 2500 символов (~625 токенов)
+  const tplTrimmed = templateText.length > 2500 ? templateText.slice(0, 2500) + '\n...[обрезано]' : templateText;
+  const cliTrimmed = clientDoc.length > 2500 ? clientDoc.slice(0, 2500) + '\n...[обрезано]' : clientDoc;
 
   let prompt;
   if (selectedTemplateId) {
@@ -2210,12 +2208,13 @@ async function fillDocumentDocx() {
     extraInstructions = tpl?.instructions || '';
   }
 
-  // Groq лимит ~6000 TPM. 1 токен ≈ 4 символа → бюджет ~20 000 символов
-  // Бюджет: поля ~1500 + клиент ~3500 + системный промпт ~300 = ~5300 токенов
-  const CLIENT_LIMIT = 14000; // символов
-  const clientDocTrimmed = clientDoc.length > CLIENT_LIMIT
-    ? clientDoc.slice(0, CLIENT_LIMIT) + '\n...[обрезано]'
+  // Groq лимит 6000 TPM (~24 000 символов). Бюджет: поля + клиент ≤ 5000 токенов
+  const CLIENT_HARD_LIMIT = Math.max(1500, 5000 - fieldList.length);
+  const wasTrimmed = clientDoc.length > CLIENT_HARD_LIMIT;
+  const clientDocTrimmed = wasTrimmed
+    ? clientDoc.slice(0, CLIENT_HARD_LIMIT) + '\n...[обрезано]'
     : clientDoc;
+  if (wasTrimmed) toast('Документ клиента обрезан до ' + CLIENT_HARD_LIMIT + ' символов из-за лимита API', 'warning');
 
   const prompt = `Заполни поля договора данными из документа клиента.
 ${extraInstructions ? 'ИНСТРУКЦИИ: ' + extraInstructions + '\n' : ''}
