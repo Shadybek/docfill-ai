@@ -2104,6 +2104,12 @@ async function fillDocumentText() {
   }
   document.getElementById('clientDoc').classList.remove('error-field');
 
+  // Обрезаем до ~3500 символов каждую часть (бюджет ~6000 токенов)
+  const TPL_LIMIT = 3500;
+  const CLI_LIMIT = 3500;
+  const tplTrimmed = templateText.length > TPL_LIMIT ? templateText.slice(0, TPL_LIMIT) + '\n...[обрезано]' : templateText;
+  const cliTrimmed = clientDoc.length > CLI_LIMIT ? clientDoc.slice(0, CLI_LIMIT) + '\n...[обрезано]' : clientDoc;
+
   let prompt;
   if (selectedTemplateId) {
     const templates = getTemplates();
@@ -2114,29 +2120,25 @@ async function fillDocumentText() {
       catch { rulesText = tpl.rules; }
     }
     const extraInstructions = tpl?.instructions || '';
-    prompt = `Ты специалист по заполнению страховых и юридических документов.
+    prompt = `Заполни шаблон договора данными клиента.
+${extraInstructions ? 'ИНСТРУКЦИИ: ' + extraInstructions + '\n' : ''}
+ШАБЛОН:
+${tplTrimmed}
 
-ПРАВИЛА ЗАПОЛНЕНИЯ ДЛЯ ЭТОГО ТИПА ДОКУМЕНТА:
-${rulesText}
-${extraInstructions ? '\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n' + extraInstructions : ''}
+ДОКУМЕНТ КЛИЕНТА:
+${cliTrimmed}
 
-ШАБЛОН ДОКУМЕНТА:
-${templateText}
-
-ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
-${clientDoc}
-
-ЗАДАЧА: Заполни шаблон данными из входящего документа. Верни ТОЛЬКО готовый заполненный документ, без объяснений. Нет данных → [НЕ УКАЗАНО]. Язык: русский.`;
+Верни ТОЛЬКО заполненный документ, без объяснений. Нет данных → [НЕ УКАЗАНО].`;
   } else {
-    prompt = `Ты специалист по заполнению страховых и юридических документов.
+    prompt = `Заполни шаблон документа данными клиента.
 
-ШАБЛОН ДОКУМЕНТА:
-${templateText}
+ШАБЛОН:
+${tplTrimmed}
 
-ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
-${clientDoc}
+ДОКУМЕНТ КЛИЕНТА:
+${cliTrimmed}
 
-ЗАДАЧА: Найди все поля для заполнения (___  прочерки, скобки). Заполни данными из документа клиента. Верни ТОЛЬКО готовый документ без объяснений. Нет данных → [НЕ УКАЗАНО]. Язык: русский.`;
+Найди все поля (___ прочерки скобки). Верни ТОЛЬКО заполненный документ. Нет данных → [НЕ УКАЗАНО].`;
   }
 
   setFillLoading(true);
@@ -2208,21 +2210,22 @@ async function fillDocumentDocx() {
     extraInstructions = tpl?.instructions || '';
   }
 
-  // Обрезаем текст шаблона чтобы не дублировать (поля уже есть в fieldList)
-  const templateShort = templateExtractedText.slice(0, 800);
+  // Groq лимит ~6000 TPM. 1 токен ≈ 4 символа → бюджет ~20 000 символов
+  // Бюджет: поля ~1500 + клиент ~3500 + системный промпт ~300 = ~5300 токенов
+  const CLIENT_LIMIT = 14000; // символов
+  const clientDocTrimmed = clientDoc.length > CLIENT_LIMIT
+    ? clientDoc.slice(0, CLIENT_LIMIT) + '\n...[обрезано]'
+    : clientDoc;
 
   const prompt = `Заполни поля договора данными из документа клиента.
-${rulesText ? 'ПРАВИЛА:\n' + rulesText + '\n' : ''}${extraInstructions ? 'ИНСТРУКЦИИ:\n' + extraInstructions + '\n' : ''}
-ПОЛЯ (номер — текст рядом с полем — нужно заполнить):
+${extraInstructions ? 'ИНСТРУКЦИИ: ' + extraInstructions + '\n' : ''}
+ПОЛЯ (порядковый номер — название поля):
 ${fieldList}
 
-НАЧАЛО ШАБЛОНА (контекст):
-${templateShort}
-
 ДОКУМЕНТ КЛИЕНТА:
-${clientDoc}
+${clientDocTrimmed}
 
-Верни ТОЛЬКО JSON: {"1":"значение","2":"значение",...}
+Верни ТОЛЬКО JSON без пояснений: {"1":"значение","2":"значение",...}
 Ровно ${count} ключей. Нет данных → "[НЕ УКАЗАНО]". Язык: русский.`;
 
   setFillLoading(true);
