@@ -1989,10 +1989,13 @@ function updateApiStatus() {
 }
 
 function openSettings() {
-  document.getElementById('apiKeyInput').value = getApiKey();
+  const key = getApiKey();
+  document.getElementById('apiKeyInput').value = key;
   const sel = document.getElementById('modelSelect');
-  if (sel) sel.value = localStorage.getItem('docfill_model') || 'meta-llama/llama-3.3-70b-instruct:free';
+  if (sel) sel.value = localStorage.getItem('docfill_model') || FALLBACK_MODELS[0];
   document.getElementById('settingsModal').classList.add('visible');
+  // Загружаем актуальный список моделей в фоне
+  if (key) loadFreeModels(key);
 }
 
 function closeSettings() {
@@ -2014,14 +2017,50 @@ function saveApiKey() {
 //  OPENROUTER API CALL  (с авто-retry и fallback моделью)
 // ═══════════════════════════════════════════════════
 
-// Резервные бесплатные модели — используются если основная перегружена
-const FALLBACK_MODELS = [
+// Резервные бесплатные модели — обновляется динамически из OpenRouter
+let FALLBACK_MODELS = [
   'meta-llama/llama-3.3-70b-instruct:free',
   'meta-llama/llama-3.1-8b-instruct:free',
   'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-72b-instruct:free',
-  'mistralai/mistral-7b-instruct:free',
+  'deepseek/deepseek-chat-v3-0324:free',
+  'google/gemma-3-27b-it:free',
+  'qwen/qwen3-8b:free',
+  'microsoft/phi-4:free',
 ];
+
+// Загружаем актуальный список бесплатных моделей с OpenRouter
+async function loadFreeModels(key) {
+  try {
+    const resp = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': 'Bearer ' + key }
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const free = (data.data || [])
+      .filter(m => m.id.endsWith(':free') && m.context_length >= 8000)
+      .map(m => m.id);
+    if (free.length > 3) {
+      FALLBACK_MODELS = free;
+      // Обновляем список в настройках
+      updateModelSelectOptions(free);
+    }
+  } catch { /* тихо игнорируем */ }
+}
+
+function updateModelSelectOptions(models) {
+  const sel = document.getElementById('modelSelect');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '';
+  models.slice(0, 12).forEach(id => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    const name = id.replace(':free', '').split('/')[1] || id;
+    opt.textContent = name + ' ✅ бесплатно';
+    if (id === current || id === FALLBACK_MODELS[0]) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
 
 async function callGemini(prompt) {
   const key = getApiKey();
@@ -2084,7 +2123,9 @@ async function callOpenRouter(prompt, key, model) {
     const code = resp.status;
     if (code === 401) throw new Error('FORBIDDEN: Неверный API ключ OpenRouter.');
     if (code === 402) throw new Error('BILLING: Пополните баланс на openrouter.ai/credits');
-    if (code === 429 || code === 503 || code === 502) throw new Error('RATE_LIMIT: модель ' + model + ' перегружена.');
+    // 404 = модель не найдена, 429/502/503 = перегружена — оба случая пробуют следующую
+    if (code === 404 || code === 429 || code === 503 || code === 502)
+      throw new Error('RATE_LIMIT: модель ' + model + ' недоступна (' + code + ').');
     throw new Error('API_ERROR ' + code + ': ' + (msg || resp.statusText));
   }
 
