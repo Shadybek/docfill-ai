@@ -2159,6 +2159,26 @@ ${clientDoc}
   }
 }
 
+// ─── Извлечение контекста полей из текста шаблона ───
+function extractFieldContexts(text) {
+  const lines = text.split('\n');
+  const fields = [];
+  let idx = 1;
+  for (const line of lines) {
+    if (!line.includes('_')) continue;
+    const parts = line.split(/_+/g);
+    for (let i = 0; i < parts.length - 1; i++) {
+      let before = parts[i].trim().replace(/[:\-–—\s]+$/, '').trim();
+      let after = (parts[i + 1] || '').trim().replace(/^[:\-–—\s]+/, '').trim();
+      if (before.length > 60) before = '...' + before.slice(-60);
+      const label = before || after.slice(0, 40) || ('поле ' + idx);
+      fields.push({ index: idx, label });
+      idx++;
+    }
+  }
+  return fields;
+}
+
 // ─── Docx режим — заполняем XML и скачиваем ───
 async function fillDocumentDocx() {
   const clientDoc = document.getElementById('clientDoc').value.trim();
@@ -2170,9 +2190,10 @@ async function fillDocumentDocx() {
   }
   document.getElementById('clientDoc').classList.remove('error-field');
 
-  // Считаем количество полей ___ в шаблоне
-  const placeholders = [...templateExtractedText.matchAll(/_+/g)];
-  const count = placeholders.length;
+  // Извлекаем контекст каждого поля для точного маппинга
+  const fields = extractFieldContexts(templateExtractedText);
+  const count = fields.length;
+  const fieldList = fields.map(f => f.index + '. [' + f.label + ']: ___').join('\n');
 
   // Строим правила если выбран шаблон из библиотеки
   let rulesText = '';
@@ -2187,18 +2208,23 @@ async function fillDocumentDocx() {
     extraInstructions = tpl?.instructions || '';
   }
 
-  const prompt = `Ты специалист по заполнению страховых и юридических документов.
-${rulesText ? 'ПРАВИЛА ЗАПОЛНЕНИЯ:\n' + rulesText + '\n' : ''}${extraInstructions ? 'ИНСТРУКЦИИ:\n' + extraInstructions + '\n' : ''}
-ШАБЛОН ДОКУМЕНТА (содержит ${count} незаполненных поля/полей, обозначенных ___):
+  const prompt = `Ты специалист по заполнению страховых и юридических договоров.
+${rulesText ? 'ПРАВИЛА:\n' + rulesText + '\n' : ''}${extraInstructions ? 'ИНСТРУКЦИИ:\n' + extraInstructions + '\n' : ''}
+ПОЛЯ ДЛЯ ЗАПОЛНЕНИЯ (пронумерованы по порядку появления в шаблоне, в скобках — текст рядом с полем):
+${fieldList}
+
+ПОЛНЫЙ ТЕКСТ ШАБЛОНА (для контекста):
 ${templateExtractedText}
 
-ВХОДЯЩИЙ ДОКУМЕНТ ОТ КЛИЕНТА (источник данных):
+ДОКУМЕНТ КЛИЕНТА (источник данных):
 ${clientDoc}
 
-ЗАДАЧА: Найди данные для каждого поля ___ в шаблоне строго по порядку их появления (сверху вниз, слева направо).
-Верни ТОЛЬКО JSON объект без markdown-обёртки и без комментариев:
-{"1": "значение поля 1", "2": "значение поля 2", ...}
-Количество ключей: ${count}. Если данных нет — пиши "[НЕ УКАЗАНО]". Документы на русском и/или английском языке.`;
+ЗАДАЧА: Для каждого пронумерованного поля найди подходящее значение из документа клиента.
+Используй текст в скобках чтобы понять что именно нужно вставить в это поле.
+Верни ТОЛЬКО JSON без markdown-обёртки:
+{"1": "значение", "2": "значение", ...}
+Ровно ${count} ключей. Если данных нет — пиши "[НЕ УКАЗАНО]".
+Языки: русский и/или английский.`;
 
   setFillLoading(true);
   document.getElementById('resultBlock').classList.remove('visible');
@@ -2221,9 +2247,13 @@ ${clientDoc}
     const outName = templateFileName.replace(/\.docx$/i, '_заполнен.docx');
     downloadBuffer(filledBuffer, outName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-    // Формируем читаемое резюме для отображения
+    // Формируем читаемое резюме с метками полей
     const summary = Object.entries(replacements)
-      .map(([k, v]) => 'Поле ' + k + ': ' + v)
+      .map(([k, v]) => {
+        const field = fields.find(f => String(f.index) === String(k));
+        const label = field ? field.label : ('Поле ' + k);
+        return label + ': ' + v;
+      })
       .join('\n');
     currentResult = summary;
     currentTemplateName = templateFileName;
